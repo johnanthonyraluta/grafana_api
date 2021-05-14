@@ -1,29 +1,62 @@
-from jinja2 import Environment, FileSystemLoader
+from typing import Optional
+from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
+from pydantic import BaseModel
+from typing import List
+from fastapi.responses import HTMLResponse
+from modules.grafana_api import grafana_json,template
+from modules.parse_input import parse_host_int
+import shutil
 import uuid
-import json
+from starlette.responses import FileResponse
 
-def generate_config(data):
-    file_loader = FileSystemLoader('templates/')
-    env = Environment(loader=file_loader)
-    template = env.get_template("panel.j2")
-    output = template.render(data=data)
-    return output
+app = FastAPI()
+
+class User(BaseModel):
+    user_name: dict
+@app.get("/")
+async def main():
+    content = """
+<header>
+<h1>Welcome to Grafana JSON Template Generator!</h1>
+<p>Created by: Cisco PH Automation Team</p>
+<p>~~~~~~~~~</p>
+</header>
+<body>
+<form action="/files/" enctype="multipart/form-data" method="post">
+<input name="files" type="file" multiple>
+<input type="submit">
+</form>
+</body>
+    """
+    return HTMLResponse(content=content)
+
+# @app.post("/files/")
+# async def create_files(files: List[bytes] = File(...)):
+#     # for myfiles in files:
+#     #     print(myfiles)
+#     #     with open("/vagrant/grafana_api/uploaded_files/"+myfiles, "wb") as buffer:
+#     #         shutil.copyfileobj(myfiles.file, buffer)
+#     #return ({"file_sizes": [len(file) for file in files]},{"filename":myfiles.filename})
+#     return {"file_sizes": [len(file) for file in files]}
 
 
-base = json.loads(open("templates/base.json","r").read())
-csv_data = open("interfaces.txt","r").read().split("\n")
-for x in csv_data:
-    print({"hostname": x.split(",")[0], "interface":x.split(",")[1]})
-file_reader = [ {"hostname": x.split(",")[0], "interface":x.split(",")[1]} for x in csv_data]
-counter = 0
-for x in file_reader:
-    x["id"] = counter
-    counter = counter + 1
-    output = generate_config(x)
-    data = json.loads(output)
+@app.post("/uploadfiles/")
+async def create_upload_files(files: List[UploadFile] = File(...)):
+    for myfiles in files:
+        #with open("/vagrant/grafana_api/uploaded_files/"+myfiles.filename, "wb") as buffer:
+        with open("/mnt/c/Users/jraluta/nso_parser/grafana_api/uploaded_files/tmp_" + myfiles.filename,"wb") as buffer:
+            shutil.copyfileobj(myfiles.file, buffer)
+    return {"filenames": [file.filename for file in files]}
 
-    base["panels"].append(data)
+@app.get("/template/{unique_id}")
+async def create_template(unique_id:str):
+    my_uuid = str(uuid.uuid4().hex)
+    status1 = parse_host_int(unique_id)
+    status2 = grafana_json(unique_id,my_uuid)
+    return status1,status2
 
-print(len(base["panels"]))
-file_writer = open("output.json","w")
-file_writer.write(json.dumps(base))
+@app.get("/json_template/{unique_id}")
+async def download_template(unique_id:str):
+    my_json = template(unique_id)
+    return my_json
